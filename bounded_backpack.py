@@ -30,8 +30,35 @@ class BoundedBackpack:
         available (or `timeout` seconds elapse -> BackpackTimeoutError).
         Insert at the top (LIFO), then wake any thread waiting in pop().
         """
-        # TODO
-        raise NotImplementedError
+        start_time = time.monotonic()
+
+        with self._condition:
+            while len(self._items) >= self.capacity:
+                if timeout is None:
+                    self._condition.wait()
+                else:
+                    elapsed = time.monotonic() - start_time
+                    remaining = timeout - elapsed
+
+                    if remaining <= 0:
+                        raise BackpackTimeoutError(
+                            "push() timed out waiting for space"
+                        )
+
+                    self._condition.wait(timeout=remaining)
+
+                    # Check whether the timeout expired while waiting.
+                    if len(self._items) >= self.capacity:
+                        elapsed = time.monotonic() - start_time
+                        if elapsed >= timeout:
+                            raise BackpackTimeoutError(
+                                "push() timed out waiting for space"
+                            )
+
+            self._items.append(item)
+
+            # Wake threads waiting for an item to become available.
+            self._condition.notify_all()
 
     def pop(self, timeout: Optional[float] = None) -> Any:
         """
@@ -39,5 +66,34 @@ class BoundedBackpack:
         available (or `timeout` seconds elapse -> BackpackTimeoutError).
         Remove and return the top item, then wake any thread waiting in push().
         """
-        # TODO
-        raise NotImplementedError
+        start_time = time.monotonic()
+
+        with self._condition:
+            while not self._items:
+                if timeout is None:
+                    self._condition.wait()
+                else:
+                    elapsed = time.monotonic() - start_time
+                    remaining = timeout - elapsed
+
+                    if remaining <= 0:
+                        raise BackpackTimeoutError(
+                            "pop() timed out waiting for an item"
+                        )
+
+                    self._condition.wait(timeout=remaining)
+
+                    # Check whether the timeout expired while waiting.
+                    if not self._items:
+                        elapsed = time.monotonic() - start_time
+                        if elapsed >= timeout:
+                            raise BackpackTimeoutError(
+                                "pop() timed out waiting for an item"
+                            )
+
+            item = self._items.pop()
+
+            # Wake threads waiting for space to become available.
+            self._condition.notify_all()
+
+            return item
